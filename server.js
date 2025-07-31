@@ -1,3 +1,4 @@
+// server.js
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
@@ -9,19 +10,17 @@ const {
 const app = express();
 const port = process.env.PORT || 3000;
 
-// In-memory user store (use a real DB in production)
-const userDB = new Map();
+const userDB = new Map(); // temp DB — replace with real DB if needed
 
 app.use(cors({
-  origin: "https://atsh.tech", // Allow requests only from your Netlify domain
-  credentials: true
+  origin: "https://atsh.tech", // ✅ Your Netlify custom domain
+  credentials: true,
 }));
 app.use(bodyParser.json());
 
-// 1. Generate registration options
+// 🔹 Step 1: Registration options
 app.post("/register/options", async (req, res) => {
   const { email } = req.body;
-
   if (!email) return res.status(400).json({ error: "Missing email" });
 
   const user = {
@@ -32,7 +31,7 @@ app.post("/register/options", async (req, res) => {
 
   const options = generateRegistrationOptions({
     rpName: "Ascandane",
-    rpID: "atsh.tech",                     // Custom domain as RP ID
+    rpID: "atsh.tech", // ✅ your domain
     user,
     timeout: 60000,
     attestationType: "none",
@@ -51,7 +50,7 @@ app.post("/register/options", async (req, res) => {
   res.json(options);
 });
 
-// 2. Verify registration response
+// 🔹 Step 2: Verify registration response
 app.post("/register/verify", async (req, res) => {
   const { email, attResp } = req.body;
   const user = userDB.get(email);
@@ -64,8 +63,8 @@ app.post("/register/verify", async (req, res) => {
     const verification = await verifyRegistrationResponse({
       response: attResp,
       expectedChallenge: user.currentChallenge,
-      expectedOrigin: "https://atsh.tech",   // 
-      expectedRPID: "atsh.tech",             // 
+      expectedOrigin: "https://atsh.tech", // ✅ Your site on Netlify
+      expectedRPID: "atsh.tech",
     });
 
     if (verification.verified) {
@@ -81,5 +80,5 @@ app.post("/register/verify", async (req, res) => {
 });
 
 app.listen(port, () => {
-  console.log(`🚀 Server running on http://localhost:${port}`);
+  console.log(`✅ Server running at http://localhost:${port}`);
 });
