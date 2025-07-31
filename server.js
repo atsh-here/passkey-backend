@@ -1,70 +1,85 @@
-const express = require('express');
-const cors = require('cors');
-const base64url = require('base64url');
-const { generateRegistrationOptions, verifyRegistrationResponse } = require('@simplewebauthn/server');
+const express = require("express");
+const cors = require("cors");
+const bodyParser = require("body-parser");
+const {
+  generateRegistrationOptions,
+  verifyRegistrationResponse,
+} = require("@simplewebauthn/server");
 
 const app = express();
-app.use(cors());
-app.use(express.json());
+const port = process.env.PORT || 3000;
 
-// In-memory DB (use real DB in production)
-const db = {
-  users: {},
-};
+// In-memory user store (use a real DB in production)
+const userDB = new Map();
 
-app.post('/register/options', (req, res) => {
+app.use(cors({
+  origin: "https://atsh.tech", // Allow requests only from your Netlify domain
+  credentials: true
+}));
+app.use(bodyParser.json());
+
+// 1. Generate registration options
+app.post("/register/options", async (req, res) => {
   const { email } = req.body;
-  const userId = email;
 
-  const user = db.users[email] || {
-    id: base64url.encode(Buffer.from(email)),
-    email,
-    credentials: [],
+  if (!email) return res.status(400).json({ error: "Missing email" });
+
+  const user = {
+    id: Buffer.from(email).toString("base64"),
+    name: email,
+    displayName: email,
   };
 
   const options = generateRegistrationOptions({
-    rpName: 'Ascandane',
-    rpID: 'your-domain.netlify.app', // Replace this
-    userID: user.id,
-    userName: user.email,
-    attestationType: 'indirect',
+    rpName: "Ascandane",
+    rpID: "atsh.tech",                     // Custom domain as RP ID
+    user,
+    timeout: 60000,
+    attestationType: "none",
     authenticatorSelection: {
-      userVerification: 'preferred',
-      residentKey: 'required',
+      residentKey: "discouraged",
+      userVerification: "preferred",
     },
   });
 
-  user.currentChallenge = options.challenge;
-  db.users[email] = user;
+  // Save challenge temporarily
+  userDB.set(email, {
+    ...user,
+    currentChallenge: options.challenge,
+  });
 
   res.json(options);
 });
 
-app.post('/register/verify', async (req, res) => {
+// 2. Verify registration response
+app.post("/register/verify", async (req, res) => {
   const { email, attResp } = req.body;
-  const user = db.users[email];
-  if (!user) return res.status(400).json({ verified: false });
+  const user = userDB.get(email);
+
+  if (!user || !user.currentChallenge) {
+    return res.status(400).json({ error: "Invalid user or challenge" });
+  }
 
   try {
     const verification = await verifyRegistrationResponse({
       response: attResp,
       expectedChallenge: user.currentChallenge,
-      expectedOrigin: 'https://your-domain.netlify.app', // Replace with your Netlify URL
-      expectedRPID: 'your-domain.netlify.app',
+      expectedOrigin: "https://atsh.tech",   // 
+      expectedRPID: "atsh.tech",             // 
     });
 
     if (verification.verified) {
-      user.credentials.push(verification.registrationInfo);
-      return res.json({ verified: true });
+      user.credential = verification.registrationInfo;
+      userDB.set(email, user);
     }
 
-    res.json({ verified: false });
+    res.json({ verified: verification.verified });
   } catch (err) {
-    console.error(err);
-    res.json({ verified: false });
+    console.error("Verification error:", err);
+    res.status(500).json({ error: "Verification failed" });
   }
 });
 
-app.listen(3000, () => {
-  console.log('Server running on port 3000');
+app.listen(port, () => {
+  console.log(`🚀 Server running on http://localhost:${port}`);
 });
